@@ -40,6 +40,7 @@ vi.mock("@/lib/db/client", () => ({
 
 vi.mock("@/lib/audio/provider-factory", () => ({
   getAudioProvider: () => mockProvider,
+  getSTTProvider: () => null, // Use main provider's transcribe in tests
 }));
 
 vi.mock("@/server/repositories/job.repo", () => ({
@@ -69,6 +70,7 @@ describe("runProcessingPipeline", () => {
       participants: [
         {
           id: "p1",
+          label: "A",
           enrollmentSamples: [{ blobUrl: "https://example.com/sample1.wav", isSelected: true }],
         },
       ],
@@ -215,9 +217,10 @@ describe("runProcessingPipeline", () => {
     mockPrisma.session.findUniqueOrThrow.mockResolvedValue({
       id: "sess_1",
       participants: [
-        { id: "p1", enrollmentSamples: [] },
+        { id: "p1", label: "A", enrollmentSamples: [] },
         {
           id: "p2",
+          label: "B",
           enrollmentSamples: [{ blobUrl: "https://example.com/s2.wav", isSelected: true }],
         },
       ],

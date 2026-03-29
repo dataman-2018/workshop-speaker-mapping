@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/db/client";
 import { ProcessingStatus } from "@prisma/client";
-import { getAudioProvider } from "@/lib/audio/provider-factory";
+import { getAudioProvider, getSTTProvider } from "@/lib/audio/provider-factory";
 import type { SpeakerEmbedding, SpeakerMatchResult } from "@/lib/audio/types";
+import type { PyannoteProvider } from "@/lib/audio/providers/pyannote";
 import { jobRepo } from "@/server/repositories/job.repo";
 import { utteranceRepo } from "@/server/repositories/utterance.repo";
 
 export async function runProcessingPipeline(jobId: string): Promise<void> {
   const provider = getAudioProvider();
+  const sttProvider = getSTTProvider();
 
   try {
     // Load job to get sessionId
@@ -34,6 +36,8 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
     const mediaUrl = session.mediaAssets[0]?.blobUrl;
     if (!mediaUrl) throw new Error("No session audio media asset found");
 
+    const participants = session.participants;
+
     // --- Step 1: ENROLLING ---
     await jobRepo.updateJobStatus(
       jobId,
@@ -43,7 +47,11 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
     );
 
     const profiles: SpeakerEmbedding[] = [];
-    const participants = session.participants;
+    const voiceprints: Array<{
+      participantId: string;
+      label: string;
+      voiceprint: string;
+    }> = [];
 
     for (let i = 0; i < participants.length; i++) {
       const participant = participants[i];
@@ -59,16 +67,27 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
       };
       profiles.push(profile);
 
+      // For pyannote: extract base64 voiceprint for identify() call
+      const vpData = (result as SpeakerEmbedding & { _voiceprint?: string })
+        ._voiceprint;
+      if (vpData) {
+        voiceprints.push({
+          participantId: participant.id,
+          label: participant.label,
+          voiceprint: vpData,
+        });
+      }
+
       // Upsert speaker profile in DB
       await prisma.speakerProfile.upsert({
         where: { participantId: participant.id },
         update: {
-          embedding: result.embedding,
+          embedding: vpData ? { voiceprint: vpData } : result.embedding,
           quality: result.quality,
         },
         create: {
           participantId: participant.id,
-          embedding: result.embedding,
+          embedding: vpData ? { voiceprint: vpData } : result.embedding,
           quality: result.quality,
         },
       });
@@ -82,50 +101,113 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
       );
     }
 
-    // --- Step 2: DIARIZING ---
-    await jobRepo.updateJobStatus(
-      jobId,
-      ProcessingStatus.DIARIZING,
-      35,
-      "Running speaker diarization"
-    );
-
-    const diarizationResult = await provider.diarize(mediaUrl);
-
-    await jobRepo.updateJobStatus(
-      jobId,
-      ProcessingStatus.DIARIZING,
-      50,
-      `Found ${diarizationResult.numSpeakers} speakers, ${diarizationResult.segments.length} segments`
-    );
-
-    // --- Step 3: MAPPING ---
-    await jobRepo.updateJobStatus(
-      jobId,
-      ProcessingStatus.MAPPING,
-      55,
-      "Matching speakers to enrolled profiles"
-    );
-
-    const matchResults: SpeakerMatchResult[] = await provider.matchSpeakers(
-      diarizationResult.segments,
-      profiles
-    );
-
-    // Build cluster -> participantId lookup
-    const clusterToParticipant = new Map<string, string | null>();
-    const clusterToConfidence = new Map<string, number>();
-    for (const match of matchResults) {
-      clusterToParticipant.set(match.cluster, match.participantId);
-      clusterToConfidence.set(match.cluster, match.confidence);
+    // Build participant label -> id lookup
+    const labelToParticipantId = new Map<string, string>();
+    for (const p of participants) {
+      labelToParticipantId.set(p.label, p.id);
     }
 
-    await jobRepo.updateJobStatus(
-      jobId,
-      ProcessingStatus.MAPPING,
-      65,
-      `Mapped ${matchResults.filter((m) => m.participantId).length}/${matchResults.length} clusters`
-    );
+    // --- Choose pipeline based on provider capabilities ---
+    const isPyannote = provider.name === "pyannote" && voiceprints.length > 0;
+
+    let clusterToParticipant: Map<string, string | null>;
+    let clusterToConfidence: Map<string, number>;
+
+    if (isPyannote) {
+      // === 2-LAYER PIPELINE: pyannote identify (diarization + matching) ===
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.DIARIZING,
+        35,
+        "Running speaker identification (diarization + matching)"
+      );
+
+      const pyannote = provider as PyannoteProvider;
+      const identResult = await pyannote.identify(
+        mediaUrl,
+        voiceprints.map((vp) => ({
+          label: vp.label,
+          voiceprint: vp.voiceprint,
+        }))
+      );
+
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.MAPPING,
+        55,
+        `Identified ${identResult.numSpeakers} speakers, ${identResult.segments.length} segments`
+      );
+
+      // Build cluster -> participant lookup from identification results
+      // In pyannote identify, speaker is already the matched label or SPEAKER_XX
+      clusterToParticipant = new Map();
+      clusterToConfidence = new Map();
+
+      const speakersSeen = new Set<string>();
+      for (const seg of identResult.segments) {
+        if (!speakersSeen.has(seg.speaker)) {
+          speakersSeen.add(seg.speaker);
+          const participantId =
+            labelToParticipantId.get(seg.speaker) ?? null;
+          clusterToParticipant.set(seg.speaker, participantId);
+
+          // Get max confidence for matched speaker
+          const maxConf = seg.confidence[seg.speaker] ?? 0;
+          clusterToConfidence.set(seg.speaker, maxConf / 100); // pyannote uses 0-100
+        }
+      }
+
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.MAPPING,
+        65,
+        `Mapped ${[...clusterToParticipant.values()].filter(Boolean).length}/${clusterToParticipant.size} speakers`
+      );
+    } else {
+      // === STANDARD PIPELINE: separate diarize + match ===
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.DIARIZING,
+        35,
+        "Running speaker diarization"
+      );
+
+      const diarizationResult = await provider.diarize(mediaUrl);
+
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.DIARIZING,
+        50,
+        `Found ${diarizationResult.numSpeakers} speakers, ${diarizationResult.segments.length} segments`
+      );
+
+      // --- MAPPING ---
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.MAPPING,
+        55,
+        "Matching speakers to enrolled profiles"
+      );
+
+      const matchResults: SpeakerMatchResult[] = await provider.matchSpeakers(
+        diarizationResult.segments,
+        profiles
+      );
+
+      clusterToParticipant = new Map();
+      clusterToConfidence = new Map();
+      for (const match of matchResults) {
+        clusterToParticipant.set(match.cluster, match.participantId);
+        clusterToConfidence.set(match.cluster, match.confidence);
+      }
+
+      await jobRepo.updateJobStatus(
+        jobId,
+        ProcessingStatus.MAPPING,
+        65,
+        `Mapped ${matchResults.filter((m) => m.participantId).length}/${matchResults.length} clusters`
+      );
+    }
 
     // --- Step 4: TRANSCRIBING ---
     await jobRepo.updateJobStatus(
@@ -135,7 +217,9 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
       "Transcribing audio"
     );
 
-    const transcriptionResult = await provider.transcribe(mediaUrl);
+    // Use dedicated STT provider if available, otherwise use main provider
+    const transcriber = sttProvider ?? provider;
+    const transcriptionResult = await transcriber.transcribe(mediaUrl);
 
     await jobRepo.updateJobStatus(
       jobId,
@@ -145,7 +229,6 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
     );
 
     // --- Step 5: Combine and save ---
-    // Delete old utterances for reprocessing
     await utteranceRepo.deleteBySession(sessionId);
 
     const utteranceInputs = transcriptionResult.segments.map((seg) => ({
@@ -172,7 +255,6 @@ export async function runProcessingPipeline(jobId: string): Promise<void> {
     await jobRepo
       .updateJobStatus(jobId, ProcessingStatus.FAILED, undefined, undefined, message)
       .catch(() => {
-        // If we can't update the job status, log and move on
         console.error("Failed to update job status to FAILED:", message);
       });
   }

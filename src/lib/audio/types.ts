@@ -62,3 +62,28 @@ export interface AudioProcessingProvider {
     profiles: SpeakerEmbedding[]
   ): Promise<SpeakerMatchResult[]>;
 }
+
+/**
+ * STT-only provider interface for transcription.
+ * Used alongside a diarization provider in 2-layer architectures.
+ */
+export interface STTProvider {
+  name: string;
+  transcribe(mediaUrl: string): Promise<TranscriptionResult>;
+}
+
+/**
+ * Speaker identification result from pyannoteAI identify endpoint.
+ * Segments include the matched speaker label (or SPEAKER_XX for unknown).
+ */
+export interface IdentificationSegment {
+  startTime: number;
+  endTime: number;
+  speaker: string; // matched label or SPEAKER_XX
+  confidence: Record<string, number>;
+}
+
+export interface IdentificationResult {
+  segments: IdentificationSegment[];
+  numSpeakers: number;
+}
