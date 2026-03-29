@@ -89,19 +89,20 @@ export function BulkEnrollmentUploader({
         },
       });
 
-      // Analyze
-      setProcessingStatus("Analyzing speakers...");
+      // Analyze (synchronous — runs diarization + transcription in parallel, up to 60s)
+      setProcessingStatus("Analyzing speakers (this may take up to a minute)...");
       setUploadProgress(100);
 
       const res = await fetch("/api/enrollment/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ audioUrl: blob.url, sessionId }),
+        signal: AbortSignal.timeout(120_000), // 2 min client timeout
       });
 
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Analysis failed");
+        const errData = await res.json();
+        throw new Error(errData.error || "Analysis failed");
       }
 
       const data: AnalyzeResponse = await res.json();

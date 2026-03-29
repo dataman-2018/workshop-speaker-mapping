@@ -3,6 +3,8 @@ import { z } from "zod";
 import { jobRepo } from "@/server/repositories/job.repo";
 import { runProcessingPipeline } from "@/server/services/processing.service";
 
+export const maxDuration = 60;
+
 const StartJobSchema = z.object({
   sessionId: z.string().min(1),
 });
