@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
             "audio/flac",
           ],
           maximumSizeInBytes: 100 * 1024 * 1024, // 100MB
+          addRandomSuffix: true,
           tokenPayload: clientPayload || "",
         };
       },

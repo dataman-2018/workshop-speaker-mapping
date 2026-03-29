@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
             "video/quicktime",
           ],
           maximumSizeInBytes: 500 * 1024 * 1024, // 500MB
+          addRandomSuffix: true,
           tokenPayload: clientPayload || "",
         };
       },
