@@ -6,7 +6,7 @@ import { PyannoteProvider } from "./providers/pyannote";
  * Get the primary audio processing provider (diarization + speaker identification).
  */
 export function getAudioProvider(): AudioProcessingProvider {
-  const provider = process.env.AUDIO_PROVIDER ?? "dummy";
+  const provider = (process.env.AUDIO_PROVIDER ?? "dummy").trim();
 
   switch (provider) {
     case "dummy":
@@ -26,7 +26,7 @@ export function getAudioProvider(): AudioProcessingProvider {
  * In dummy mode, the main provider handles transcription.
  */
 export function getSTTProvider(): STTProvider | null {
-  const sttProvider = process.env.STT_PROVIDER;
+  const sttProvider = process.env.STT_PROVIDER?.trim();
 
   if (!sttProvider) return null; // Use main provider's transcribe()
 
