@@ -13,6 +13,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { AddParticipantButton } from "./add-participant-button";
+import { UploadTab } from "@/features/uploads/upload-tab";
+import { ProcessingTab } from "@/features/processing/processing-tab";
+import { TranscriptTab } from "@/features/transcripts/transcript-tab";
 
 interface Props {
   params: Promise<{ projectId: string; sessionId: string }>;
@@ -111,21 +114,29 @@ export default async function SessionDetailPage({ params }: Props) {
         </TabsContent>
 
         <TabsContent value="uploads" className="mt-4">
-          <p className="text-sm text-muted-foreground">
-            Upload functionality coming soon.
-          </p>
+          <UploadTab
+            sessionId={sessionId}
+            participants={session.participants.map((p) => ({
+              id: p.id,
+              label: p.label,
+              displayName: p.displayName,
+            }))}
+          />
         </TabsContent>
 
         <TabsContent value="processing" className="mt-4">
-          <p className="text-sm text-muted-foreground">
-            Processing pipeline coming soon.
-          </p>
+          <ProcessingTab sessionId={sessionId} />
         </TabsContent>
 
         <TabsContent value="transcript" className="mt-4">
-          <p className="text-sm text-muted-foreground">
-            Transcript view coming soon.
-          </p>
+          <TranscriptTab
+            sessionId={sessionId}
+            participants={session.participants.map((p) => ({
+              id: p.id,
+              label: p.label,
+              displayName: p.displayName,
+            }))}
+          />
         </TabsContent>
       </Tabs>
     </div>
