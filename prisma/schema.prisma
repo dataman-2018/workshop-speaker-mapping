@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -10,4 +5,182 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+  auditLogs AuditLog[]
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+
+  user     User      @relation(fields: [userId], references: [id])
+  sessions Session[]
+
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  name      String
+  projectId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  participants Participant[]
+  mediaAssets  MediaAsset[]
+  jobs         ProcessingJob[]
+  utterances   TranscriptUtterance[]
+
+  @@index([projectId])
+}
+
+model Participant {
+  id          String  @id @default(cuid())
+  sessionId   String
+  label       String  // A, B, C, ...
+  displayName String?
+  createdAt   DateTime @default(now())
+
+  session           Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  enrollmentSamples EnrollmentSample[]
+  speakerProfile    SpeakerProfile?
+  assignments       SpeakerAssignment[]
+
+  @@unique([sessionId, label])
+  @@index([sessionId])
+}
+
+model EnrollmentSample {
+  id            String   @id @default(cuid())
+  participantId String
+  blobUrl       String
+  filename      String
+  durationSec   Float?
+  qualityScore  Float?   // 0-1
+  isSelected    Boolean  @default(false) // selected for profile building
+  createdAt     DateTime @default(now())
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@index([participantId])
+}
+
+model SpeakerProfile {
+  id            String   @id @default(cuid())
+  participantId String   @unique
+  embedding     Json     // float array stored as JSON
+  quality       Float    // aggregate quality score
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+}
+
+model MediaAsset {
+  id          String   @id @default(cuid())
+  sessionId   String
+  blobUrl     String
+  filename    String
+  contentType String
+  sizeBytes   Int
+  durationSec Float?
+  type        MediaType
+  createdAt   DateTime @default(now())
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+enum MediaType {
+  ENROLLMENT
+  SESSION_AUDIO
+  SESSION_VIDEO
+}
+
+model ProcessingJob {
+  id          String           @id @default(cuid())
+  sessionId   String
+  status      ProcessingStatus @default(PENDING)
+  progress    Int              @default(0) // 0-100
+  currentStep String?
+  error       String?
+  createdAt   DateTime         @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+}
+
+enum ProcessingStatus {
+  PENDING
+  ENROLLING
+  DIARIZING
+  MAPPING
+  TRANSCRIBING
+  COMPLETED
+  FAILED
+}
+
+model TranscriptUtterance {
+  id              String  @id @default(cuid())
+  sessionId       String
+  startTime       Float   // seconds
+  endTime         Float
+  text            String
+  speakerCluster  String? // raw cluster from diarization
+  confidence      Float   @default(0)
+  isManuallyEdited Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  session    Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  assignment SpeakerAssignment?
+
+  @@index([sessionId])
+  @@index([sessionId, startTime])
+}
+
+model SpeakerAssignment {
+  id           String  @id @default(cuid())
+  utteranceId  String  @unique
+  participantId String?
+  confidence   Float   @default(0)
+  isManual     Boolean @default(false)
+
+  utterance   TranscriptUtterance @relation(fields: [utteranceId], references: [id], onDelete: Cascade)
+  participant Participant?        @relation(fields: [participantId], references: [id])
+
+  @@index([participantId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([userId])
 }
