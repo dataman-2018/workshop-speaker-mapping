@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { EnrollmentUploader } from "./enrollment-uploader";
 import { SessionUploader } from "./session-uploader";
+import { BulkEnrollmentUploader } from "./bulk-enrollment-uploader";
 
 interface Participant {
   id: string;
@@ -48,6 +49,20 @@ export function UploadTab({ sessionId, participants }: UploadTabProps) {
             ))}
           </div>
         )}
+      </div>
+
+      <Separator />
+
+      <div>
+        <h3 className="text-sm font-medium mb-3">Bulk Enrollment</h3>
+        <p className="text-sm text-muted-foreground mb-3">
+          Upload a single audio file with consecutive self-introductions to
+          auto-detect speakers and register them as participants.
+        </p>
+        <BulkEnrollmentUploader
+          sessionId={sessionId}
+          onComplete={handleUploadComplete}
+        />
       </div>
 
       <Separator />
