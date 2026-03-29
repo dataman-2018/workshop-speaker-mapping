@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { prisma } from "@/lib/db/client";
-import { MediaType } from "@/generated/prisma/client";
+import { MediaType } from "@prisma/client";
 
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as HandleUploadBody;

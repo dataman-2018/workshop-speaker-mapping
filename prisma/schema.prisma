@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -14,7 +14,7 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  projects Project[]
+  projects  Project[]
   auditLogs AuditLog[]
 }
 
@@ -39,7 +39,7 @@ model Session {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   participants Participant[]
   mediaAssets  MediaAsset[]
   jobs         ProcessingJob[]
@@ -49,13 +49,13 @@ model Session {
 }
 
 model Participant {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   sessionId   String
-  label       String  // A, B, C, ...
+  label       String
   displayName String?
   createdAt   DateTime @default(now())
 
-  session           Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session           Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   enrollmentSamples EnrollmentSample[]
   speakerProfile    SpeakerProfile?
   assignments       SpeakerAssignment[]
@@ -70,8 +70,8 @@ model EnrollmentSample {
   blobUrl       String
   filename      String
   durationSec   Float?
-  qualityScore  Float?   // 0-1
-  isSelected    Boolean  @default(false) // selected for profile building
+  qualityScore  Float?
+  isSelected    Boolean  @default(false)
   createdAt     DateTime @default(now())
 
   participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
@@ -82,8 +82,8 @@ model EnrollmentSample {
 model SpeakerProfile {
   id            String   @id @default(cuid())
   participantId String   @unique
-  embedding     Json     // float array stored as JSON
-  quality       Float    // aggregate quality score
+  embedding     Json
+  quality       Float
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -91,7 +91,7 @@ model SpeakerProfile {
 }
 
 model MediaAsset {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   sessionId   String
   blobUrl     String
   filename    String
@@ -99,7 +99,7 @@ model MediaAsset {
   sizeBytes   Int
   durationSec Float?
   type        MediaType
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
@@ -116,7 +116,7 @@ model ProcessingJob {
   id          String           @id @default(cuid())
   sessionId   String
   status      ProcessingStatus @default(PENDING)
-  progress    Int              @default(0) // 0-100
+  progress    Int              @default(0)
   currentStep String?
   error       String?
   createdAt   DateTime         @default(now())
@@ -139,16 +139,16 @@ enum ProcessingStatus {
 }
 
 model TranscriptUtterance {
-  id              String  @id @default(cuid())
-  sessionId       String
-  startTime       Float   // seconds
-  endTime         Float
-  text            String
-  speakerCluster  String? // raw cluster from diarization
-  confidence      Float   @default(0)
-  isManuallyEdited Boolean @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(cuid())
+  sessionId        String
+  startTime        Float
+  endTime          Float
+  text             String
+  speakerCluster   String?
+  confidence       Float    @default(0)
+  isManuallyEdited Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   session    Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   assignment SpeakerAssignment?
@@ -158,11 +158,11 @@ model TranscriptUtterance {
 }
 
 model SpeakerAssignment {
-  id           String  @id @default(cuid())
-  utteranceId  String  @unique
+  id            String  @id @default(cuid())
+  utteranceId   String  @unique
   participantId String?
-  confidence   Float   @default(0)
-  isManual     Boolean @default(false)
+  confidence    Float   @default(0)
+  isManual      Boolean @default(false)
 
   utterance   TranscriptUtterance @relation(fields: [utteranceId], references: [id], onDelete: Cascade)
   participant Participant?        @relation(fields: [participantId], references: [id])
